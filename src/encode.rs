@@ -53,8 +53,25 @@ fn emit_copy(dst: &mut [u8], offset: u8, length: usize) -> Result<usize, &'stati
 
 	let mut i: usize = 0;
 
-
-
+	while length > 0 {
+		let mut x = length - 4;
+		if 0 <=x && x < 1<<3 && offset < 1<<11 {
+			dst[i] = (offset>>8 as u8)&0x07<<5 | (x as u8)<<2 | TAG_COPY_1;
+			dst[i+1] = offset as u8;
+			i += 2;
+			break;
+		}
+		x = length;
+		if x > 1<<6 {
+			x = 1 << 6;
+		}
+		dst[i] = (x-1 as u8)<<2 | TAG_COPY_2;
+		dst[i+1] = offset as u8;
+		dst[i+2] = (offset >> 8) as u8;
+		i += 3;
+		length -= x;
+	}
+	i
 }
 
 // MaxEncodedLen returns the maximum length of a snappy block, given its
@@ -69,8 +86,8 @@ pub fn MaxEncodedLen(srcLen : u64) ->  u64 {
 // It is valid to pass a nil dst.
 pub fn Encode(dst: &'a mut [u8], src: &mut [u8]) -> Result<&'a mut [u8], &'static str> {
 	
-	unimplemented!()
-	Ok(dst.split_at_mut(i).1)
+	unimplemented!();
+	// Ok(dst.split_at_mut(i).1)
 }
 
 
