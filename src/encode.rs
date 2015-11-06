@@ -27,11 +27,11 @@ impl <W: Write> Compressor<W> {
 impl <W: Write> Write for Compressor<W> {
     // Implement Write
     // Source Buffer -> Destination (Inner) Buffer
-    fn write(&mut self, src: &[u8]) -> Result<usize> {
+    pub fn write(&mut self, src: &[u8]) -> Result<usize> {
     	unimplemented!()
     }
     // Implement Flush
-    fn flush(&mut self) -> Result<()> {
+    pub fn flush(&mut self) -> Result<()> {
     	unimplemented!()
     }
 }
@@ -39,12 +39,11 @@ impl <W: Write> Write for Compressor<W> {
 // If Compressor is Given a Cursor or Seekable Writer
 // This Gives the BufWriter the seek method
 impl <W: Write + Seek> Seek for Compressor<W> {
-	fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
+	pub fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
 		self.inner.seek(pos).and_then(|res: u64| {
 			self.pos = res;
 			Ok(res)
 		})
-
 	}
 }
 
@@ -53,7 +52,7 @@ pub fn compress(src: &[u8]) -> Vec<u8> {
 
 	// Start Block with varint-encoded length of decompressed bytes
 	for i in 0..7 {
-		dst.push((((src.len() as u64) >> 8*i) << 8*i) as u8);
+		// dst.push((((src.len() as u64) >> 8*i) << 8*i) as u8);
 	}
 
 	// Return early if src is short
@@ -86,6 +85,12 @@ fn emit_literal(dst: &mut [u8], lit: &mut [u8]) -> Result<usize> {
 		dst[1] = n as u8;
 		dst[2] = (n >> 8) as u8;
 		i = 3;
+	} else if n < 1<<24 {
+		dst[0] = 62<<2 | TAG_LITERAL;
+		dst[1] = n as u8;
+		dst[2] = (n >> 8) as u8;
+		dst[3] = (n >> 16) as u8;
+		i = 4;
 	} else if n < 1<<32 {
 		dst[0] = 63<<2 | TAG_LITERAL;
 		dst[1] = n as u8;
