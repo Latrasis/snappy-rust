@@ -17,7 +17,8 @@ const MAX_BUFFER_SIZE: usize = 76_490;
 pub struct Compressor<W: Write> {
     inner: BufWriter<W>,
     pos: u64,
-    buf: [u8; MAX_BUFFER_SIZE],
+    buf_body: [u8; MAX_BUFFER_SIZE],
+    buf_header : [u8; (CHECK_SUM_SIZE + CHUNK_HEADER_SIZE) as usize],
     wroteHeader: bool,
 }
 
@@ -27,7 +28,8 @@ impl <W: Write> Compressor<W> {
         Compressor {
             inner: BufWriter::new(inner),
             pos: 0,
-            buf: [0; MAX_BUFFER_SIZE],
+            buf_body: [0; MAX_BUFFER_SIZE],
+            buf_header: [0; (CHECK_SUM_SIZE + CHUNK_HEADER_SIZE) as usize],
             wroteHeader: false,
         }
     }
@@ -38,10 +40,12 @@ impl <W: Write> Write for Compressor<W> {
     // Source Buffer -> Destination (Inner) Buffer
     fn write(&mut self, src: &[u8]) -> Result<usize> {
         
+        let mut written: usize = 0;
+
         if !self.wroteHeader {
             // Write Stream Literal
             // (Future) Handle Error
-            self.inner.write(&MAGIC_CHUNK).unwrap();
+            written += self.inner.write(&MAGIC_CHUNK).unwrap();
             self.wroteHeader = true;
         }
 
@@ -49,6 +53,7 @@ impl <W: Write> Write for Compressor<W> {
         for srcChunk in src.chunks(MAX_UNCOMPRESSED_CHUNK_LEN as usize) {
 
             let chunkBody : &[u8];
+            let chunkType: u8;
 
             // Create Checksum
             // TODO
@@ -56,20 +61,43 @@ impl <W: Write> Write for Compressor<W> {
 
             // Compress the buffer, discarding the result if the improvement
             // isn't at least 12.5%.
-            if compress(&self.buf, scrChunk).unwrap() >= srcChunk.len()*(7/8) {
+            if compress(&mut self.buf_body, srcChunk).unwrap() >= srcChunk.len()*(7/8) {
+                chunkType = CHUNK_TYPE_UNCOMPRESSED_DATA;
                 chunkBody = srcChunk;
             } else {
-                chunkBody = &self.buf;
+                chunkType = CHUNK_TYPE_COMPRESSED_DATA;
+                chunkBody = &self.buf_body;
             }
 
             // TODO
             // Write Checksum into `mut& self.inner.BufWriter`
-            
+            let chunkLen = chunkBody.len() + 4;
+
+            // Write Chunk Type
+            self.buf_header[0] = chunkType;
+            // Write Chunk Length
+            self.buf_header[1] = (chunkLen >> 0) as u8;
+            self.buf_header[2] = (chunkLen >> 8) as u8;
+            self.buf_header[3] = (chunkLen >> 16) as u8;
+            // Write Chunk Checksum
+            // self.buf_header[4] = (checksum >> 0) as u8
+            // self.buf_header[5] = (checksum >> 8) as u8
+            // self.buf_header[6] = (checksum >> 16) as u8
+            // self.buf_header[7] = (checksum >> 24) as u8
+
+            // TODO
+            // Write Chunk Header
+            // Handle Errors
+            written += self.inner.write(&self.buf_header).unwrap();
+
+            // TODO
+            // Write Chunk Body
+            // Handle Errors
+            written += self.inner.write(chunkBody).unwrap();
 
         }
 
-        unimplemented!();
-
+        Ok(written)
     }
     // Implement Flush
     fn flush(&mut self) -> Result<()> {
@@ -133,7 +161,7 @@ pub fn compress(dst: &mut[u8], src: &[u8]) -> io::Result<usize> {
     // (Future) Iterate in chunks of 4?
     while s+3 < src.len() {
         // Update the hash table.
-        let mut b : (u8, u8, u8, u8) = (src[s], src[s+1], src[s+2], src[s+3]);
+        let b : (u8, u8, u8, u8) = (src[s], src[s+1], src[s+2], src[s+3]);
         let h : u32 = (b.0 as u32) | ((b.1 as u32) <<8) | ((b.2 as u32) <<16) | ((b.3 as u32) <<24);
         // (Future) Handle Unwrap!
         // ??? what's with `0x1e35a7bd`??
@@ -144,7 +172,7 @@ pub fn compress(dst: &mut[u8], src: &[u8]) -> io::Result<usize> {
         // and shift the values against this zero: add 1 on writes,
         // subtract 1 on reads.
         t = (*p-1) as usize;
-        let mut p = s+1;
+        *p = (s+1) as i32;
         // If t is invalid or src[s:s+4] differs from src[t:t+4], accumulate a literal byte.
         if t < 0 || s-t >= MAX_OFFSET || b.0 != src[t] || b.1 != src[t+1] || b.2 != src[t+2] || b.3 != src[t+3] {
             s += 1;
