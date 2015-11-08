@@ -11,9 +11,13 @@ use definitions::*;
 // We limit how far copy back-references can go, the same as the C++ code.
 const MAX_OFFSET: usize = 1 << 15;
 
+// The Max Encoded Length of the Max Chunk of 65536 bytes
+const MAX_BUFFER_SIZE: usize = 76_490;
+
 pub struct Compressor<W: Write> {
     inner: BufWriter<W>,
     pos: u64,
+    buf: [u8; MAX_BUFFER_SIZE],
     wroteHeader: bool,
 }
 
@@ -23,6 +27,7 @@ impl <W: Write> Compressor<W> {
         Compressor {
             inner: BufWriter::new(inner),
             pos: 0,
+            buf: [0; MAX_BUFFER_SIZE],
             wroteHeader: false,
         }
     }
@@ -32,7 +37,39 @@ impl <W: Write> Write for Compressor<W> {
     // Implement Write
     // Source Buffer -> Destination (Inner) Buffer
     fn write(&mut self, src: &[u8]) -> Result<usize> {
-        unimplemented!()
+        
+        if !self.wroteHeader {
+            // Write Stream Literal
+            // (Future) Handle Error
+            self.inner.write(&MAGIC_CHUNK).unwrap();
+            self.wroteHeader = true;
+        }
+
+        // Split source into chunks of 65536 bytes each.
+        for srcChunk in src.chunks(MAX_UNCOMPRESSED_CHUNK_LEN as usize) {
+
+            let chunkBody : &[u8];
+
+            // Create Checksum
+            // TODO
+            // let checksum = srcChunk;
+
+            // Compress the buffer, discarding the result if the improvement
+            // isn't at least 12.5%.
+            if compress(&self.buf, scrChunk).unwrap() >= srcChunk.len()*(7/8) {
+                chunkBody = srcChunk;
+            } else {
+                chunkBody = &self.buf;
+            }
+
+            // TODO
+            // Write Checksum into `mut& self.inner.BufWriter`
+            
+
+        }
+
+        unimplemented!();
+
     }
     // Implement Flush
     fn flush(&mut self) -> Result<()> {
@@ -58,7 +95,6 @@ impl <W: Write + Seek> Seek for Compressor<W> {
 
 // (Future) Include a Legacy Compress??
 pub fn compress(dst: &mut[u8], src: &[u8]) -> io::Result<usize> {
-    // let dst: Vec<u8> = Vec::with_capacity(Max_Encoded_Len(src.len()));
     if dst.len() < Max_Encoded_Len(src.len()) {
         return Err(Error::new(ErrorKind::InvalidInput, "snappy: destination buffer is too short"));
     }

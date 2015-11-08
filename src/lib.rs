@@ -27,6 +27,7 @@ use std::io;
 //
 
 mod definitions {
+
     pub const TAG_LITERAL: u8 = 0x00;
     pub const TAG_COPY_1: u8 = 0x01;
     pub const TAG_COPY_2: u8 = 0x02;
@@ -34,9 +35,11 @@ mod definitions {
 
     pub const CHECK_SUM_SIZE: u8 = 4;
     pub const CHUNK_HEADER_SIZE: u8 = 4;
-
-    // pub const MAGIC_BODY : &'static str	= "sNaPpY";
-    // pub const MAGIC_CHUNK : &'static str = r"\xff\x06\x00\x00" + MAGIC_BODY;
+    // pub const MAGIC_BODY : [u8]	= b"sNaPpY";
+    pub const MAGIC_CHUNK : [u8; 10] = [0xff,0x06,0x00,0x00,0x73,0x4e,0x61,0x50,0x70,0x59];
+    // https://github.com/google/snappy/blob/master/framing_format.txt says
+	// that "the uncompressed data in a chunk must be no longer than 65536 bytes".
+    pub const MAX_UNCOMPRESSED_CHUNK_LEN : u8 = 65536;
 
     pub const CHUNK_TYPE_COMPRESSED_DATA: u8 = 0x00;
     pub const CHUNK_TYPE_UNCOMPRESSED_DATA: u8 = 0x01;
