@@ -18,7 +18,7 @@ pub struct Compressor<W: Write> {
     inner: BufWriter<W>,
     pos: u64,
     buf_body: [u8; MAX_BUFFER_SIZE],
-    buf_header : [u8; (CHECK_SUM_SIZE + CHUNK_HEADER_SIZE) as usize],
+    buf_header: [u8; (CHECK_SUM_SIZE + CHUNK_HEADER_SIZE) as usize],
     wroteHeader: bool,
 }
 
@@ -39,7 +39,7 @@ impl <W: Write> Write for Compressor<W> {
     // Implement Write
     // Source Buffer -> Destination (Inner) Buffer
     fn write(&mut self, src: &[u8]) -> Result<usize> {
-        
+
         let mut written: usize = 0;
 
         if !self.wroteHeader {
@@ -52,7 +52,7 @@ impl <W: Write> Write for Compressor<W> {
         // Split source into chunks of 65536 bytes each.
         for srcChunk in src.chunks(MAX_UNCOMPRESSED_CHUNK_LEN as usize) {
 
-            let chunkBody : &[u8];
+            let chunkBody: &[u8];
             let chunkType: u8;
 
             // Create Checksum
@@ -61,7 +61,7 @@ impl <W: Write> Write for Compressor<W> {
 
             // Compress the buffer, discarding the result if the improvement
             // isn't at least 12.5%.
-            if compress(&mut self.buf_body, srcChunk).unwrap() >= srcChunk.len()*(7/8) {
+            if compress(&mut self.buf_body, srcChunk).unwrap() >= srcChunk.len() * (7 / 8) {
                 chunkType = CHUNK_TYPE_UNCOMPRESSED_DATA;
                 chunkBody = srcChunk;
             } else {
@@ -88,12 +88,12 @@ impl <W: Write> Write for Compressor<W> {
             // TODO
             // Write Chunk Header
             // Handle Errors
-            written += self.inner.write(&self.buf_header).unwrap();
+            written += try!(self.inner.write(&self.buf_header));
 
             // TODO
             // Write Chunk Body
             // Handle Errors
-            written += self.inner.write(chunkBody).unwrap();
+            written += try!(self.inner.write(chunkBody));
 
         }
 
@@ -116,13 +116,13 @@ impl <W: Write + Seek> Seek for Compressor<W> {
     }
 }
 
-// Encode returns the encoded form of src. The returned slice may be a sub-
-// slice of dst if dst was large enough to hold the entire encoded block.
-// Otherwise, a newly allocated slice will be returned.
-// It is valid to pass a nil dst.
+// Compress writes the encoded form of src into dst and return the length
+// written.
+// Returns an error if dst was not large enough to hold the entire encoded
+// block.
 
 // (Future) Include a Legacy Compress??
-pub fn compress(dst: &mut[u8], src: &[u8]) -> io::Result<usize> {
+pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
     if dst.len() < Max_Encoded_Len(src.len()) {
         return Err(Error::new(ErrorKind::InvalidInput, "snappy: destination buffer is too short"));
     }
@@ -138,13 +138,13 @@ pub fn compress(dst: &mut[u8], src: &[u8]) -> io::Result<usize> {
             // TODO Handle Error
             d += emit_literal(dst.split_at_mut(d).1, src).unwrap();
         }
-        return Ok(d)
+        return Ok(d);
     }
 
     // Initialize the hash table. Its size ranges from 1<<8 to 1<<14 inclusive.
     const MAX_TABLE_SIZE: usize = 1 << 14;
     let mut shift: u32 = 24;
-    let mut tableSize: usize = 1<<8;
+    let mut tableSize: usize = 1 << 8;
 
     while tableSize < MAX_TABLE_SIZE && tableSize < src.len() {
         shift -= 1;
@@ -159,22 +159,23 @@ pub fn compress(dst: &mut[u8], src: &[u8]) -> io::Result<usize> {
     let mut lit: usize = 0;
 
     // (Future) Iterate in chunks of 4?
-    while s+3 < src.len() {
+    while s + 3 < src.len() {
         // Update the hash table.
-        let b : (u8, u8, u8, u8) = (src[s], src[s+1], src[s+2], src[s+3]);
-        let h : u32 = (b.0 as u32) | ((b.1 as u32) <<8) | ((b.2 as u32) <<16) | ((b.3 as u32) <<24);
+        let b: (u8, u8, u8, u8) = (src[s], src[s + 1], src[s + 2], src[s + 3]);
+        let h: u32 = (b.0 as u32) | ((b.1 as u32) << 8) | ((b.2 as u32) << 16) | ((b.3 as u32) << 24);
         // (Future) Handle Unwrap!
         // ??? what's with `0x1e35a7bd`??
-        let p: &mut i32 = table.get_mut(((h*0x1e35a7bd) >> shift) as usize).unwrap();
+        let p: &mut i32 = table.get_mut(((h * 0x1e35a7bd) >> shift) as usize).unwrap();
 
         // We need to to store values in [-1, inf) in table. To save
         // some initialization time, (re)use the table's zero value
         // and shift the values against this zero: add 1 on writes,
         // subtract 1 on reads.
-        t = (*p-1) as usize;
-        *p = (s+1) as i32;
-        // If t is invalid or src[s:s+4] differs from src[t:t+4], accumulate a literal byte.
-        if t < 0 || s-t >= MAX_OFFSET || b.0 != src[t] || b.1 != src[t+1] || b.2 != src[t+2] || b.3 != src[t+3] {
+        t = (*p - 1) as usize;
+        *p = (s + 1) as i32;
+        // If t is invalid or src[s:s+4] differs from src[t:t+4], accumulate a literal
+        // byte.
+        if t < 0 || s - t >= MAX_OFFSET || b.0 != src[t] || b.1 != src[t + 1] || b.2 != src[t + 2] || b.3 != src[t + 3] {
             s += 1;
             continue;
         }
@@ -194,7 +195,7 @@ pub fn compress(dst: &mut[u8], src: &[u8]) -> io::Result<usize> {
         }
 
         // Emit the copied bytes.
-        d += emit_copy(dst.split_at_mut(d).1, s-t, s-s0);
+        d += emit_copy(dst.split_at_mut(d).1, s - t, s - s0);
         lit = s;
     }
 
@@ -260,6 +261,7 @@ fn emit_copy(dst: &mut [u8], offset: usize, mut length: usize) -> usize {
     let mut i: usize = 0;
 
     while length > 0 {
+        // TODO: Handle Overflow
         let mut x = length - 4;
         if 0 <= x && x < 1 << 3 && offset < 1 << 11 {
             dst[i] = ((offset >> 8) as u8) & 0x07 << 5 | (x as u8) << 2 | TAG_COPY_1;
@@ -286,13 +288,3 @@ fn emit_copy(dst: &mut [u8], offset: usize, mut length: usize) -> usize {
 pub fn Max_Encoded_Len(srcLen: usize) -> usize {
     32 + srcLen + srcLen / 6
 }
-
-// Encode returns the encoded form of src. The returned slice may be a sub-
-// slice of dst if dst was large enough to hold the entire encoded block.
-// Otherwise, a newly allocated slice will be returned.
-// It is valid to pass a nil dst.
-// pub fn Encode(dst: &'a mut [u8], src: &mut [u8]) -> Result<&'a mut [u8],
-// &'static str> {
-
-// 	// Ok(dst.split_at_mut(i).1)
-// }
