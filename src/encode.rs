@@ -1,9 +1,11 @@
 extern crate byteorder;
+extern crate crc;
 
 use std::io;
 use std::io::{BufWriter, ErrorKind, Write, Seek, SeekFrom, Result, Error};
 use std::result;
 use self::byteorder::{ByteOrder, WriteBytesExt, LittleEndian};
+use self::crc::{crc32, Hasher32};
 
 use definitions::*;
 
@@ -52,6 +54,8 @@ impl <W: Write> Write for Compressor<W> {
         // Split source into chunks of 65536 bytes each.
         for srcChunk in src.chunks(MAX_UNCOMPRESSED_CHUNK_LEN as usize) {
 
+            // TODO 
+            // Handle Written Slice Length (Ignore Previous Garbage)
             let chunkBody: &[u8];
             let chunkType: u8;
 
@@ -61,12 +65,13 @@ impl <W: Write> Write for Compressor<W> {
 
             // Compress the buffer, discarding the result if the improvement
             // isn't at least 12.5%.
-            if compress(&mut self.buf_body, srcChunk).unwrap() >= srcChunk.len() * (7 / 8) {
+            let n = compress(&mut self.buf_body, srcChunk).unwrap();
+            if n >= srcChunk.len() * (7 / 8) {
                 chunkType = CHUNK_TYPE_UNCOMPRESSED_DATA;
                 chunkBody = srcChunk;
             } else {
                 chunkType = CHUNK_TYPE_COMPRESSED_DATA;
-                chunkBody = &self.buf_body;
+                chunkBody = self.buf_body.split_at(n).0;
             }
 
             // TODO
@@ -151,6 +156,8 @@ pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
         tableSize *= 2;
     }
 
+    // TODO
+    // Set as Array in Compressor.table<[u8; MAX_TABLE_SIZE]>
     let mut table: Vec<i32> = Vec::with_capacity(MAX_TABLE_SIZE);
 
     // Iterate over the source bytes

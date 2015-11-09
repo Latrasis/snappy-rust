@@ -5,3 +5,5 @@ authors = ["latrasis"]
 
 [dependencies]
 byteorder = "0.3.13"
+crc = "1.2.0"
+
