@@ -21,7 +21,7 @@ pub struct Compressor<W: Write> {
     pos: u64,
     buf_body: [u8; MAX_BUFFER_SIZE],
     buf_header: [u8; (CHECK_SUM_SIZE + CHUNK_HEADER_SIZE) as usize],
-    wroteHeader: bool,
+    wrote_header: bool,
 }
 
 impl <W: Write> Compressor<W> {
@@ -32,7 +32,7 @@ impl <W: Write> Compressor<W> {
             pos: 0,
             buf_body: [0; MAX_BUFFER_SIZE],
             buf_header: [0; (CHECK_SUM_SIZE + CHUNK_HEADER_SIZE) as usize],
-            wroteHeader: false,
+            wrote_header: false,
         }
     }
 }
@@ -44,69 +44,64 @@ impl <W: Write> Write for Compressor<W> {
 
         let mut written: usize = 0;
 
-        if !self.wroteHeader {
+        if !self.wrote_header {
             // Write Stream Literal
             // (Future) Handle Error
             written += self.inner.write(&MAGIC_CHUNK).unwrap();
-            self.wroteHeader = true;
+            self.wrote_header = true;
         }
 
         // Split source into chunks of 65536 bytes each.
-        for srcChunk in src.chunks(MAX_UNCOMPRESSED_CHUNK_LEN as usize) {
+        for src_chunk in src.chunks(MAX_UNCOMPRESSED_CHUNK_LEN as usize) {
 
             // TODO 
             // Handle Written Slice Length (Ignore Previous Garbage)
-            let chunkBody: &[u8];
-            let chunkType: u8;
+            let chunk_body: &[u8];
+            let chunk_type: u8;
 
             // Create Checksum
-            // TODO
-            // let checksum = srcChunk;
+            let checksum: u32 = crc32::checksum_ieee(src_chunk);
 
             // Compress the buffer, discarding the result if the improvement
             // isn't at least 12.5%.
-            let n = compress(&mut self.buf_body, srcChunk).unwrap();
-            if n >= srcChunk.len() * (7 / 8) {
-                chunkType = CHUNK_TYPE_UNCOMPRESSED_DATA;
-                chunkBody = srcChunk;
+            let n = try!(compress(&mut self.buf_body, src_chunk));
+            if n >= src_chunk.len() * (7 / 8) {
+                chunk_type = CHUNK_TYPE_UNCOMPRESSED_DATA;
+                chunk_body = src_chunk;
             } else {
-                chunkType = CHUNK_TYPE_COMPRESSED_DATA;
-                chunkBody = self.buf_body.split_at(n).0;
+                chunk_type = CHUNK_TYPE_COMPRESSED_DATA;
+                chunk_body = self.buf_body.split_at(n).0;
             }
 
-            // TODO
-            // Write Checksum into `mut& self.inner.BufWriter`
-            let chunkLen = chunkBody.len() + 4;
+            let chunk_len = chunk_body.len() + 4;
 
             // Write Chunk Type
-            self.buf_header[0] = chunkType;
+            self.buf_header[0] = chunk_type;
             // Write Chunk Length
-            self.buf_header[1] = (chunkLen >> 0) as u8;
-            self.buf_header[2] = (chunkLen >> 8) as u8;
-            self.buf_header[3] = (chunkLen >> 16) as u8;
+            self.buf_header[1] = (chunk_len >> 0) as u8;
+            self.buf_header[2] = (chunk_len >> 8) as u8;
+            self.buf_header[3] = (chunk_len >> 16) as u8;
             // Write Chunk Checksum
-            // self.buf_header[4] = (checksum >> 0) as u8
-            // self.buf_header[5] = (checksum >> 8) as u8
-            // self.buf_header[6] = (checksum >> 16) as u8
-            // self.buf_header[7] = (checksum >> 24) as u8
+            self.buf_header[4] = (checksum >> 0) as u8;
+            self.buf_header[5] = (checksum >> 8) as u8;
+            self.buf_header[6] = (checksum >> 16) as u8;
+            self.buf_header[7] = (checksum >> 24) as u8;
 
-            // TODO
-            // Write Chunk Header
-            // Handle Errors
-            written += try!(self.inner.write(&self.buf_header));
+            // Write Chunk Header and Handle Error
+            try!(self.inner.write_all(&self.buf_header));
+            // Write Chunk Body and Handle Error
+            try!(self.inner.write_all(chunk_body));
 
-            // TODO
-            // Write Chunk Body
-            // Handle Errors
-            written += try!(self.inner.write(chunkBody));
-
+            // If all goes well, count written length as uncompressed length
+            written += src_chunk.len();
         }
 
         Ok(written)
     }
-    // Implement Flush
+
+    // Flushes Inner buffer and resets Compressor
     fn flush(&mut self) -> Result<()> {
-        unimplemented!()
+        self.inner.flush()
     }
 }
 
@@ -128,7 +123,7 @@ impl <W: Write + Seek> Seek for Compressor<W> {
 
 // (Future) Include a Legacy Compress??
 pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
-    if dst.len() < Max_Encoded_Len(src.len()) {
+    if dst.len() < max_compressed_len(src.len()) {
         return Err(Error::new(ErrorKind::InvalidInput, "snappy: destination buffer is too short"));
     }
 
@@ -149,11 +144,11 @@ pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
     // Initialize the hash table. Its size ranges from 1<<8 to 1<<14 inclusive.
     const MAX_TABLE_SIZE: usize = 1 << 14;
     let mut shift: u32 = 24;
-    let mut tableSize: usize = 1 << 8;
+    let mut table_size: usize = 1 << 8;
 
-    while tableSize < MAX_TABLE_SIZE && tableSize < src.len() {
+    while table_size < MAX_TABLE_SIZE && table_size < src.len() {
         shift -= 1;
-        tableSize *= 2;
+        table_size *= 2;
     }
 
     // TODO
@@ -255,7 +250,7 @@ fn emit_literal(dst: &mut [u8], lit: &[u8]) -> io::Result<usize> {
         s += 1;
     }
 
-    if (s == lit.len()) {
+    if s == lit.len() {
         Ok(i + lit.len())
     } else {
         return Err(Error::new(ErrorKind::InvalidInput, "snappy: destination buffer is too short"));
@@ -290,8 +285,8 @@ fn emit_copy(dst: &mut [u8], offset: usize, mut length: usize) -> usize {
     i
 }
 
-// Max_Encoded_Len returns the maximum length of a snappy block, given its
+// max_compressed_len returns the maximum length of a snappy block, given its
 // uncompressed length.
-pub fn Max_Encoded_Len(srcLen: usize) -> usize {
-    32 + srcLen + srcLen / 6
+pub fn max_compressed_len(src_len: usize) -> usize {
+    32 + src_len + src_len / 6
 }
