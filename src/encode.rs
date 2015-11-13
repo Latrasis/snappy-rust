@@ -46,8 +46,7 @@ impl <W: Write> Write for Compressor<W> {
 
         if !self.wrote_header {
             // Write Stream Literal
-            // (Future) Handle Error
-            written += self.inner.write(&MAGIC_CHUNK).unwrap();
+            try!(self.inner.write(&MAGIC_CHUNK));
             self.wrote_header = true;
         }
 
@@ -151,33 +150,45 @@ pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
         table_size *= 2;
     }
 
-    // TODO
-    // Set as Array in Compressor.table<[u8; MAX_TABLE_SIZE]>
-    let mut table: Vec<i32> = Vec::with_capacity(MAX_TABLE_SIZE);
+    // Create table
+    let mut table: Vec<i32> = vec![0; MAX_TABLE_SIZE];
 
     // Iterate over the source bytes
     let mut s: usize = 0;
-    let mut t: usize;
+    let mut t: i32;
     let mut lit: usize = 0;
 
     // (Future) Iterate in chunks of 4?
     while s + 3 < src.len() {
-        // Update the hash table.
+
+        // Grab 4 bytes
         let b: (u8, u8, u8, u8) = (src[s], src[s + 1], src[s + 2], src[s + 3]);
+        
+        // Create u32 for Hashing
         let h: u32 = (b.0 as u32) | ((b.1 as u32) << 8) | ((b.2 as u32) << 16) | ((b.3 as u32) << 24);
-        // (Future) Handle Unwrap!
-        // ??? what's with `0x1e35a7bd`??
-        let p: &mut i32 = table.get_mut(((h * 0x1e35a7bd) >> shift) as usize).unwrap();
+
+        // Update the hash table
+        let ref mut p: i32 = table[(h.wrapping_mul(0x1e35a7bd) >> shift) as usize];
 
         // We need to to store values in [-1, inf) in table. To save
         // some initialization time, (re)use the table's zero value
         // and shift the values against this zero: add 1 on writes,
         // subtract 1 on reads.
-        t = (*p - 1) as usize;
+
+        // If Hash Exists t = 0; if not t = -1;
+        t = *p - 1;
+
+        // Set Position of new Hash -> i32
         *p = (s + 1) as i32;
+
         // If t is invalid or src[s:s+4] differs from src[t:t+4], accumulate a literal
         // byte.
-        if t < 0 || s - t >= MAX_OFFSET || b.0 != src[t] || b.1 != src[t + 1] || b.2 != src[t + 2] || b.3 != src[t + 3] {
+        if t < 0 || 
+            s.wrapping_sub(t as usize) >= MAX_OFFSET || 
+            b.0 != src[t as usize] || 
+            b.1 != src[(t + 1) as usize] || 
+            b.2 != src[(t + 2) as usize] || 
+            b.3 != src[(t + 3) as usize] {
             s += 1;
             continue;
         }
@@ -191,13 +202,13 @@ pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
         let s0 = s;
         s += 4;
         t += 4;
-        while s < src.len() && src[s] == src[t] {
+        while s < src.len() && src[s] == src[t as usize] {
             s += 1;
             t += 1;
         }
 
         // Emit the copied bytes.
-        d += emit_copy(dst.split_at_mut(d).1, s - t, s - s0);
+        d += emit_copy(dst.split_at_mut(d).1, s.wrapping_sub(t as usize), s - s0);
         lit = s;
     }
 
