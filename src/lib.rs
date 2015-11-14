@@ -48,6 +48,6 @@ mod definitions {
 }
 
 // Snappy Compressor
-mod encode;
-pub use self::encode::{Compressor, compress, max_compressed_len};
+mod compress;
+pub use self::compress::{Compressor, compress, max_compressed_len};
 
