@@ -14,12 +14,12 @@ pub fn decompressed_len(src: &[u8]) -> Result<usize> {
 // read.
 // Returns an error if dst was not large enough to hold the entire decoded
 // block.
-fn decompress(dst: &[u8], src: &[u8]) -> io::Result<usize> {
+fn decompress(dst: &mut [u8], src: &mut [u8]) -> io::Result<usize> {
 	// TODO: Handle Error
 	let dLen = decompressed_len(src).unwrap();
 	// TODO FIX!!
 	// For now, always assume 8 bytes used for src header length
-	let s: usize = 8;
+	let mut s: usize = 8;
 
 	if dst.len() < dLen {
         return Err(Error::new(ErrorKind::InvalidInput, "snappy: destination buffer is too short"));
@@ -29,9 +29,11 @@ fn decompress(dst: &[u8], src: &[u8]) -> io::Result<usize> {
 
     while s < src.len() {
     	match src[s] & 0x03 {
-    		TAG_LITERAL => {
-    			let mut x = src[s] >> 2;
 
+			// Parse a Literal Chunk
+    		TAG_LITERAL => {
+    			
+    			let mut x = src[s] >> 2;
     			match x {
 	    			0..59 => s += 1,
     				60 => {
@@ -62,7 +64,7 @@ fn decompress(dst: &[u8], src: &[u8]) -> io::Result<usize> {
     					};
     					x = (src[s-4] as usize) | ((src[s-3]<<8) as usize) | ((src[s-2]<<16) as usize) | ((src[s-1]<<24) as usize);
     				},
-    				_
+    				_ => {}
     			}
     			length = (x+1) as isize;
 
@@ -80,8 +82,48 @@ fn decompress(dst: &[u8], src: &[u8]) -> io::Result<usize> {
 			    d += length;
 			    s += length;
 			    continue;
-    		}
+    		},
+
+    		// Parse a Copy1 Chunk
+    		TAG_COPY_1 => {
+    			s+= 2;
+    			if s > src.len() {
+					return Err(ErrorKind::InvalidData)
+				};
+				length = 4 + (src[s-2] as isize)>>2&0x7;
+				offset = ((src[s-2] as isize)&0xe0<<3) | (src[s-1] as isize);
+    		},
+
+    		// Parse a Copy2 Chunk
+    		TAG_COPY_2 => {
+    			s+= 3;
+    			if s > src.len() {
+					return Err(ErrorKind::InvalidData)
+				};
+				length = 1 + (src[s-3] as isize)>>2;
+				offset = (src[s-2] as isize) | ((src[s-1] as isize)<<8);
+    		},
+
+    		// Parse a Copy4
+    		TAG_COPY_4 => {
+		        return Err(Error::new(ErrorKind::InvalidInput, "snappy: unsupported COPY_4 tag"));
+    		},
+
+    		_ => unreachable!()
+    	};
+
+    	let end = d + length;
+    	if offset > || end > dst.len() {
+			return Err(ErrorKind::InvalidData);
+    	}
+    	while d < end {
+    		d += 1;
+    		dst[d] = dst[d-offset];
     	}
     }
+    if d != dLen {
+		return Err(ErrorKind::InvalidData);
+    }
+    Ok(d)
 }
 
