@@ -51,3 +51,7 @@ mod definitions {
 mod compress;
 pub use self::compress::{Compressor, compress, max_compressed_len};
 
+// Snappy Decompressor
+mod decompress;
+// pub use self::decompress::{Compressor, compress, max_compressed_len};
+
