@@ -3,7 +3,6 @@ extern crate crc;
 
 use std::io;
 use std::io::{BufWriter, ErrorKind, Write, Seek, SeekFrom, Result, Error};
-use std::result;
 use self::byteorder::{ByteOrder, WriteBytesExt, LittleEndian};
 use self::crc::{crc32, Hasher32};
 
@@ -223,7 +222,7 @@ pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
 // emitLiteral writes a literal chunk and returns the number of bytes written.
 fn emit_literal(dst: &mut [u8], lit: &[u8]) -> io::Result<usize> {
 
-    let mut i: usize;
+    let i: usize;
     let n: u64 = (lit.len() - 1) as u64;
 
     if n < 60 {
