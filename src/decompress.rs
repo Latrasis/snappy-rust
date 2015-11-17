@@ -2,10 +2,72 @@ extern crate byteorder;
 
 use std::result::*;
 use std::io;
-use std::io::{BufWriter, ErrorKind, Write, Seek, SeekFrom, Error};
+use std::io::{BufReader, ErrorKind, Read, Seek, SeekFrom, Error};
 use self::byteorder::{ByteOrder, ReadBytesExt, LittleEndian};
 
 use definitions::*;
+use compress::{max_compressed_len};
+
+// The Max Encoded Length of the Max Chunk of 65536 bytes
+const MAX_BUFFER_SIZE: usize = 76_490;
+
+pub struct Decompressor<R: Read> {
+	inner: BufReader<R>,
+	decoded: [u8; MAX_UNCOMPRESSED_CHUNK_LEN as usize],
+	buf: [u8; MAX_BUFFER_SIZE + (CHECK_SUM_SIZE as usize)],
+	// decoded[i:j] contains decoded bytes that have not yet been passed on.
+	i: usize,
+	j: usize,
+	read_header: bool,
+}
+
+impl <R: Read> Decompressor<R> {
+
+	pub fn new(inner: R) -> Decompressor<R> {
+		Decompressor {
+			inner: BufReader::new(inner),
+			decoded: [0; MAX_UNCOMPRESSED_CHUNK_LEN as usize],
+			buf: [0; MAX_BUFFER_SIZE + (CHECK_SUM_SIZE as usize)],
+			i: 0,
+			j: 0,
+			read_header: false,
+		}
+	}
+}
+
+impl <R: Read> Read for Decompressor<R> {
+	// Implement Read
+	// Source (Inner) Buffer into Destination Buffer, returning how many bytes were read.
+	fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
+		loop {
+
+			if self.i < self.j {
+				let mut s = 0; 
+				for (d, l) in dst.iter_mut().zip(self.decoded.split_at(self.i).1.split_at(self.j).0.iter()) {
+			        *d = *l;
+			        s += 1;
+			    }
+			    self.i += s;
+			    return Ok(s)
+			}	
+
+			// Read ChunkType
+			if self.inner.read(self.buf.split_at_mut(4).0).unwrap() != 4 {
+				return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+			}
+			let chunk_type = self.buf[0];
+
+			if !self.read_header {
+				if chunk_type != CHUNK_TYPE_STREAM_IDENTIFIER {
+					return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+				}
+				self.read_header = true;
+			}
+
+		}
+	}
+}
+
 
 // decompressed_len returns the length of the decoded block.
 pub fn decompressed_len(src: &[u8]) -> u64 {
