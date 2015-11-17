@@ -1,9 +1,11 @@
 extern crate byteorder;
+extern crate crc;
 
 use std::result::*;
 use std::io;
 use std::io::{BufReader, ErrorKind, Read, Seek, SeekFrom, Error};
 use self::byteorder::{ByteOrder, ReadBytesExt, LittleEndian};
+use self::crc::{crc32, Hasher32};
 
 use definitions::*;
 use compress::{max_compressed_len};
@@ -51,18 +53,85 @@ impl <R: Read> Read for Decompressor<R> {
 			    return Ok(s)
 			}	
 
-			// Read ChunkType
+			// Grab Chunk Header
 			if self.inner.read(self.buf.split_at_mut(4).0).unwrap() != 4 {
 				return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 			}
-			let chunk_type = self.buf[0];
 
+			// Read Chunk Type
+			let chunk_type = self.buf[0];
 			if !self.read_header {
 				if chunk_type != CHUNK_TYPE_STREAM_IDENTIFIER {
 					return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 				}
 				self.read_header = true;
 			}
+
+			// Read Chunk Length
+			let chunk_len = self.buf[1] as usize | ((self.buf[2] as usize) << 8) | ((self.buf[3] as usize) << 16);
+			if chunk_len > self.buf.len() {
+				return Err(Error::new(ErrorKind::InvalidInput, "snappy: unsupported input"))
+			}
+
+			// The chunk types are specified at
+			// https://github.com/google/snappy/blob/master/framing_format.txt
+			match chunk_type {
+
+				// Section 4.2. Compressed data (chunk type 0x00).
+				CHUNK_TYPE_COMPRESSED_DATA => {
+					if chunk_len < (CHECK_SUM_SIZE as usize) {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+					// Setup Buffer Slice with Chunk Length
+					let buf: &mut [u8] = self.buf.split_at_mut(chunk_len as usize).0;
+					
+					// Read into Buffer
+					if self.inner.read(buf).unwrap() != chunk_len {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+
+					// Read Checksum
+					let check_sum = buf[0] as u32 | ((buf[1] as u32) << 8) | ((buf[2] as u32) << 16) | ((buf[3] as u32) << 24);
+					
+					// TODO: 
+					// Figure Out Borrowing and Modifying Buffer Slice instead of Copying.
+					// buf = buf.split_at_mut(CHECK_SUM_SIZE as usize).1;
+					let mut buf1 = buf.split_at_mut(CHECK_SUM_SIZE as usize).1;
+
+					// Check Decompressed Length
+					let n = decompressed_len(buf1.as_ref());
+					if n as usize > self.decoded.len() {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+
+					// Decompress
+					try!(decompress(self.decoded.as_mut(), buf1));
+
+					// Check Checksum
+					if crc32::checksum_ieee(self.decoded.split_at(n as usize).0) != check_sum {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+
+					self.i = 0;
+					self.j = n as usize;
+					continue;
+				},
+				// Section 4.3. Uncompressed data (chunk type 0x01).
+				CHUNK_TYPE_UNCOMPRESSED_DATA => {},
+				// Section 4.1. Stream identifier (chunk type 0xff).
+				CHUNK_TYPE_STREAM_IDENTIFIER => {},
+
+				// Section 4.5. Reserved unskippable chunks (chunk types 0x02-0x7f).
+				_ => {
+					return Err(Error::new(ErrorKind::InvalidInput, "snappy: unsupported input"))
+				}
+
+			}
+
+
+
+
+			unimplemented!()
 
 		}
 	}
