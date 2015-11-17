@@ -1,11 +1,11 @@
-extern crate snappy;
+extern crate snappy_rust;
 
 #[test]
 /// Snappy: Create Compressor
 fn should_create_compressor() {
 
 	use std::io::{Write};
-	use snappy::{Compressor, max_compressed_len};
+	use snappy_rust::{Compressor, max_compressed_len};
 
 	let mut sample: Vec<u8> = vec![];
 	let n = Compressor::new(&mut sample).write(b"123456789").unwrap();
