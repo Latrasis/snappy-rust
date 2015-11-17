@@ -27,7 +27,7 @@ fn decompress(dst: &mut [u8], src: &mut [u8]) -> io::Result<usize> {
         return Err(Error::new(ErrorKind::InvalidInput, "snappy: destination buffer is too short"));
     }
 
-    let (d, offset, length): (usize, usize, usize);
+    let (mut d, mut offset, mut length): (usize, usize, usize) = (0,0,0);
 
     while s < src.len() {
     	match src[s] & 0x03 {
@@ -50,21 +50,21 @@ fn decompress(dst: &mut [u8], src: &mut [u8]) -> io::Result<usize> {
     					if s > src.len() {
 					        return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"));
     					};
-    					x = (src[s-2] as usize) | ((src[s-1]<<8) as usize);
+    					x = (src[s-2] as usize) | ((src[s-1] as usize) << 8);
     				},
     				62 => {
     					s += 4;
     					if s > src.len() {
 					        return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"));
     					};
-    					x = (src[s-3] as usize) | ((src[s-2]<<8) as usize) | ((src[s-1]<<16) as usize);
+    					x = (src[s-3] as usize) | ((src[s-2] as usize) << 8) | ((src[s-1] as usize) << 16);
     				},
     				63 => {
     					s += 5;
     					if s > src.len() {
 					        return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"));
     					};
-    					x = (src[s-4] as usize) | ((src[s-3]<<8) as usize) | ((src[s-2]<<16) as usize) | ((src[s-1]<<24) as usize);
+    					x = (src[s-4] as usize) | ((src[s-3] as usize) << 8) | ((src[s-2] as usize) << 16) | ((src[s-1] as usize) << 24);
     				},
     				_ => {}
     			}
