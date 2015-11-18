@@ -99,8 +99,8 @@ impl <R: Read> Read for Decompressor<R> {
 					let mut buf1 = buf.split_at_mut(CHECK_SUM_SIZE as usize).1;
 
 					// Check Decompressed Length
-					let n = decompressed_len(buf1.as_ref());
-					if n as usize > self.decoded.len() {
+					let n = decompressed_len(buf1.as_ref()) as usize;
+					if n > self.decoded.len() {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
 
@@ -108,16 +108,46 @@ impl <R: Read> Read for Decompressor<R> {
 					try!(decompress(self.decoded.as_mut(), buf1));
 
 					// Check Checksum
-					if crc32::checksum_ieee(self.decoded.split_at(n as usize).0) != check_sum {
+					if crc32::checksum_ieee(self.decoded.split_at(n).0) != check_sum {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
 
 					self.i = 0;
-					self.j = n as usize;
+					self.j = n;
 					continue;
 				},
 				// Section 4.3. Uncompressed data (chunk type 0x01).
-				CHUNK_TYPE_UNCOMPRESSED_DATA => {},
+				CHUNK_TYPE_UNCOMPRESSED_DATA => {
+					if chunk_len < (CHECK_SUM_SIZE as usize) {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+
+					// Read Checksum using self.buf slice
+					let check_buf: &mut [u8] = self.buf.split_at_mut(CHECK_SUM_SIZE as usize).0;
+					
+					// Read into Checksum Buffer
+					if self.inner.read(check_buf).unwrap() != chunk_len {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+					// Read Checksum
+					let check_sum = check_buf[0] as u32 | ((check_buf[1] as u32) << 8) | ((check_buf[2] as u32) << 16) | ((check_buf[3] as u32) << 24);
+					
+					// Read Directly into self.decoded instead of self.buf
+					let n = chunk_len - (CHECK_SUM_SIZE as usize);
+					// Read into self.decoded Buffer
+					if self.inner.read(self.decoded.split_at_mut(n).0).unwrap() != chunk_len {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+
+					// Check Checksum
+					if crc32::checksum_ieee(self.decoded.split_at(n).0) != check_sum {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+
+					self.i = 0;
+					self.j = n;
+					continue;
+				},
 				// Section 4.1. Stream identifier (chunk type 0xff).
 				CHUNK_TYPE_STREAM_IDENTIFIER => {},
 
