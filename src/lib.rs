@@ -34,7 +34,7 @@ mod definitions {
 
     pub const CHECK_SUM_SIZE: u8 = 4;
     pub const CHUNK_HEADER_SIZE: u8 = 4;
-    // pub const MAGIC_BODY : [u8]	= b"sNaPpY";
+    pub const MAGIC_BODY : &'static [u8; 6] = b"sNaPpY";
     pub const MAGIC_CHUNK : [u8; 10] = [0xff,0x06,0x00,0x00,0x73,0x4e,0x61,0x50,0x70,0x59];
     
     // https://github.com/google/snappy/blob/master/framing_format.txt says

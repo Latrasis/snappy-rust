@@ -149,7 +149,25 @@ impl <R: Read> Read for Decompressor<R> {
 					continue;
 				},
 				// Section 4.1. Stream identifier (chunk type 0xff).
-				CHUNK_TYPE_STREAM_IDENTIFIER => {},
+				CHUNK_TYPE_STREAM_IDENTIFIER => {
+					if chunk_len != MAGIC_BODY.len() {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+
+					// Read into Buffer
+					if self.inner.read(self.buf.split_at_mut(MAGIC_BODY.len()).0).unwrap() != chunk_len {
+						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					}
+
+					// Check Written Buffer
+					for (m, b) in MAGIC_BODY.iter().zip(self.buf.iter()) {
+						if m != b {
+							return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+						}
+					}
+					
+					continue;
+				},
 
 				// Section 4.5. Reserved unskippable chunks (chunk types 0x02-0x7f).
 				_ => {
