@@ -165,7 +165,7 @@ impl <R: Read> Read for Decompressor<R> {
 							return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 						}
 					}
-					
+
 					continue;
 				},
 
@@ -176,10 +176,11 @@ impl <R: Read> Read for Decompressor<R> {
 
 			}
 
-
-
-
-			unimplemented!()
+			// Section 4.4 Padding (chunk type 0xfe).
+			// Section 4.6. Reserved skippable chunks (chunk types 0x80-0xfd).
+			if self.inner.read(self.buf.split_at_mut(chunk_len).0).unwrap() != chunk_len {
+				return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+			}
 
 		}
 	}
