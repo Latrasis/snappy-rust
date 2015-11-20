@@ -1,20 +1,26 @@
 extern crate snappy_rust;
 
+
+use std::io::{Write, Read, Cursor};
+use snappy_rust::{Compressor,Decompressor, max_compressed_len};
+
 #[test]
-/// Snappy: Create Compressor
-fn should_create_compressor() {
+/// Snappy: Create Compressor and Decompressor
+fn should_create() {
 
-	use std::io::{Write};
-	use snappy_rust::{Compressor, max_compressed_len};
+	// Write into Buffer
+	let mut comp = Cursor::new(Vec::<u8>::new());
+	let c = Compressor::new(&mut comp).write(b"123456789").unwrap();
+	
+	// Read into Buffer
+	let mut decomp = Vec::<u8>::new();
+	let d = Decompressor::new(&mut comp).read(&mut decomp).unwrap();
 
-	let mut sample: Vec<u8> = vec![];
-	let n = Compressor::new(&mut sample).write(b"123456789").unwrap();
-		
-	// Assert Valid Written Size
-	assert!(n == 9);
-	// Result should be no more than max_compressed_len(src.len())
-	assert!(sample.len() <= max_compressed_len(n));
+	// Check Result
+	assert!(decomp == b"123456789");
+
 }
+
 
 
 

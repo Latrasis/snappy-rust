@@ -196,7 +196,7 @@ pub fn decompressed_len(src: &[u8]) -> u64 {
 // read.
 // Returns an error if dst was not large enough to hold the entire decoded
 // block.
-fn decompress(dst: &mut [u8], src: &mut [u8]) -> io::Result<usize> {
+pub fn decompress(dst: &mut [u8], src: &mut [u8]) -> io::Result<usize> {
 	// TODO: Handle Error
 	let dLen = decompressed_len(src) as usize;
 	// TODO FIX!!
