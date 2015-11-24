@@ -3,7 +3,7 @@ extern crate crc;
 
 use std::result::*;
 use std::io;
-use std::io::{BufReader, ErrorKind, Read, Seek, SeekFrom, Error};
+use std::io::{BufReader, BufRead, ErrorKind, Read, Seek, SeekFrom, Error};
 use self::byteorder::{ByteOrder, ReadBytesExt, LittleEndian};
 use self::crc::{crc32, Hasher32};
 
@@ -16,7 +16,7 @@ const MAX_BUFFER_SIZE: usize = 76_490;
 pub struct Decompressor<R: Read> {
 	inner: BufReader<R>,
 	decoded: [u8; MAX_UNCOMPRESSED_CHUNK_LEN as usize],
-	buf: [u8; MAX_BUFFER_SIZE + (CHECK_SUM_SIZE as usize)],
+	// buf: Vec<u8>,
 	// decoded[i:j] contains decoded bytes that have not yet been passed on.
 	i: usize,
 	j: usize,
@@ -29,7 +29,6 @@ impl <R: Read> Decompressor<R> {
 		Decompressor {
 			inner: BufReader::new(inner),
 			decoded: [0; MAX_UNCOMPRESSED_CHUNK_LEN as usize],
-			buf: [0; MAX_BUFFER_SIZE + (CHECK_SUM_SIZE as usize)],
 			i: 0,
 			j: 0,
 			read_header: false,
@@ -51,15 +50,21 @@ impl <R: Read> Read for Decompressor<R> {
 			    }
 			    self.i += s;
 			    return Ok(s)
-			}	
+			}
+
+			// Read Buffer
+			let ibuf = try!(self.inner.fill_buf()); 
+
+			// Buffer has consumed 4 bytes now.
+			self.inner.consume(4);
 
 			// Grab Chunk Header
-			if self.inner.read(self.buf.split_at_mut(4).0).unwrap() != 4 {
+			if ibuf.len() < 4 {
 				return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 			}
 
 			// Read Chunk Type
-			let chunk_type = self.buf[0];
+			let chunk_type = ibuf[0];
 			if !self.read_header {
 				if chunk_type != CHUNK_TYPE_STREAM_IDENTIFIER {
 					return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
@@ -68,8 +73,8 @@ impl <R: Read> Read for Decompressor<R> {
 			}
 
 			// Read Chunk Length
-			let chunk_len = self.buf[1] as usize | ((self.buf[2] as usize) << 8) | ((self.buf[3] as usize) << 16);
-			if chunk_len > self.buf.len() {
+			let chunk_len = ibuf[1] as usize | ((ibuf[2] as usize) << 8) | ((ibuf[3] as usize) << 16);
+			if chunk_len > ibuf.len() {
 				return Err(Error::new(ErrorKind::InvalidInput, "snappy: unsupported input"))
 			}
 
@@ -83,35 +88,30 @@ impl <R: Read> Read for Decompressor<R> {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
 					// Setup Buffer Slice with Chunk Length
-					let buf: &mut [u8] = self.buf.split_at_mut(chunk_len as usize).0;
-					
-					// Read into Buffer
-					if self.inner.read(buf).unwrap() != chunk_len {
-						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
-					}
+					let chunk_buf: &[u8] = ibuf.split_at(chunk_len).0;
 
 					// Read Checksum
-					let check_sum = buf[0] as u32 | ((buf[1] as u32) << 8) | ((buf[2] as u32) << 16) | ((buf[3] as u32) << 24);
+					let check_sum = chunk_buf[0] as u32 | ((chunk_buf[1] as u32) << 8) | ((chunk_buf[2] as u32) << 16) | ((chunk_buf[3] as u32) << 24);
 					
-					// TODO: 
-					// Figure Out Borrowing and Modifying Buffer Slice instead of Copying.
-					// buf = buf.split_at_mut(CHECK_SUM_SIZE as usize).1;
-					let mut buf1 = buf.split_at_mut(CHECK_SUM_SIZE as usize).1;
+					// Set Chunk's Data Buffer Slice
+					let data_buf = chunk_buf.split_at(CHECK_SUM_SIZE as usize).1;
 
 					// Check Decompressed Length
-					let n = decompressed_len(buf1.as_ref()) as usize;
+					let n = decompressed_len(data_buf.as_ref()) as usize;
 					if n > self.decoded.len() {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
 
 					// Decompress
-					try!(decompress(self.decoded.as_mut(), buf1));
+					try!(decompress(self.decoded.as_mut(), data_buf));
 
 					// Check Checksum
 					if crc32::checksum_ieee(self.decoded.split_at(n).0) != check_sum {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
 
+					// Update Buffer
+					self.inner.consume(chunk_len);
 					self.i = 0;
 					self.j = n;
 					continue;
@@ -122,28 +122,26 @@ impl <R: Read> Read for Decompressor<R> {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
 
-					// Read Checksum using self.buf slice
-					let check_buf: &mut [u8] = self.buf.split_at_mut(CHECK_SUM_SIZE as usize).0;
-					
-					// Read into Checksum Buffer
-					if self.inner.read(check_buf).unwrap() != chunk_len {
-						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
-					}
+					// Setup Buffer Slice with Chunk Length
+					let chunk_buf = ibuf.split_at(chunk_len).0;
+
 					// Read Checksum
-					let check_sum = check_buf[0] as u32 | ((check_buf[1] as u32) << 8) | ((check_buf[2] as u32) << 16) | ((check_buf[3] as u32) << 24);
+					let check_sum = chunk_buf[0] as u32 | ((chunk_buf[1] as u32) << 8) | ((chunk_buf[2] as u32) << 16) | ((chunk_buf[3] as u32) << 24);
 					
-					// Read Directly into self.decoded instead of self.buf
+					// Read Directly into self.decoded
 					let n = chunk_len - (CHECK_SUM_SIZE as usize);
-					// Read into self.decoded Buffer
-					if self.inner.read(self.decoded.split_at_mut(n).0).unwrap() != chunk_len {
-						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
-					}
+
+					let mut data_buf = chunk_buf.split_at(CHECK_SUM_SIZE as usize).1;
+
+					// Read by Cloning into self.decoded Buffer
+					data_buf.read(self.decoded.split_at_mut(n).0);
 
 					// Check Checksum
 					if crc32::checksum_ieee(self.decoded.split_at(n).0) != check_sum {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
 
+					self.inner.consume(chunk_len);
 					self.i = 0;
 					self.j = n;
 					continue;
@@ -154,32 +152,34 @@ impl <R: Read> Read for Decompressor<R> {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
 
-					// Read into Buffer
-					if self.inner.read(self.buf.split_at_mut(MAGIC_BODY.len()).0).unwrap() != chunk_len {
+					// Setup Buffer Slice with Magic Body Chunk Length
+					let chunk_buf = ibuf.split_at(chunk_len).0;
+
+					if chunk_buf != MAGIC_BODY {
 						return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 					}
-
+					
 					// Check Written Buffer
-					for (m, b) in MAGIC_BODY.iter().zip(self.buf.iter()) {
-						if m != b {
-							return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
-						}
-					}
+					// for (m, b) in MAGIC_BODY.iter().zip(self.buf.iter()) {
+					// 	if m != b {
+					// 		return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
+					// 	}
+					// }
 
+					self.inner.consume(chunk_len);
 					continue;
 				},
 
 				// Section 4.5. Reserved unskippable chunks (chunk types 0x02-0x7f).
-				_ => {
+				0x02...0x7f => {
 					return Err(Error::new(ErrorKind::InvalidInput, "snappy: unsupported input"))
+				},
+
+				// Section 4.4 Padding (chunk type 0xfe).
+				// Section 4.6. Reserved skippable chunks (chunk types 0x80-0xfd).
+				_ => {
+					self.inner.consume(chunk_len);
 				}
-
-			}
-
-			// Section 4.4 Padding (chunk type 0xfe).
-			// Section 4.6. Reserved skippable chunks (chunk types 0x80-0xfd).
-			if self.inner.read(self.buf.split_at_mut(chunk_len).0).unwrap() != chunk_len {
-				return Err(Error::new(ErrorKind::InvalidInput, "snappy: corrupt input"))
 			}
 
 		}
@@ -196,7 +196,7 @@ pub fn decompressed_len(src: &[u8]) -> u64 {
 // read.
 // Returns an error if dst was not large enough to hold the entire decoded
 // block.
-pub fn decompress(dst: &mut [u8], src: &mut [u8]) -> io::Result<usize> {
+pub fn decompress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
 	// TODO: Handle Error
 	let dLen = decompressed_len(src) as usize;
 	// TODO FIX!!
