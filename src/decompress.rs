@@ -36,6 +36,8 @@ impl <R: Read> Decompressor<R> {
 	}
 }
 
+// TODO
+// IMPLEMENT BufRead for Decompressor Instead of a Read
 impl <R: Read> Read for Decompressor<R> {
 	// Implement Read
 	// Source (Inner) Buffer into Destination Buffer, returning how many bytes were read.
