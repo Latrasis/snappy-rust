@@ -126,7 +126,7 @@ pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
     }
 
     // Start Block with varint-encoded length of decompressed bytes
-    dst.as_mut().write_u64::<LittleEndian>(src.len() as u64).unwrap();
+    LittleEndian::write_u64(dst, src.len() as u64);
 
     let mut d: usize = 4;
 
