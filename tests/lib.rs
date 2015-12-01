@@ -25,11 +25,11 @@ fn roundtrip(data: &[u8]) {
 }
 
 
-// #[test]
-// /// Snappy: Roundtrip Uncompressible Data
-// fn should_roundtrip_uncompressible() {
-// 	roundtrip(b"123456789abcdefg");
-// }
+#[test]
+/// Snappy: Roundtrip Uncompressible Data
+fn should_roundtrip_uncompressible() {
+	roundtrip(b"123456789abcdefg");
+}
 
 #[test]
 /// Snappy: Roundtrip Compressible Data

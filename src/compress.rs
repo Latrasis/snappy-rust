@@ -193,8 +193,20 @@ pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
         }
 
         // Otherwise, we have a match. First, emit any pending literal bytes.
+        // Panics on d > dst.len();
         if lit != s {
-            d += emit_literal(dst.split_at_mut(d).1, src.split_at(lit).1.split_at(s).0).unwrap();
+
+            d += try!(emit_literal(dst.split_at_mut(d).1,
+
+                // Handle Split_at mid < src check 
+                {
+                    let _lit = src.split_at(lit).1;
+                    if _lit.len() > s {
+                        _lit.split_at(s).0
+                    } else {
+                        _lit
+                    }
+                }));
         }
 
         // Extend the match to be as long as possible
