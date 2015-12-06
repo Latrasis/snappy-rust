@@ -7,7 +7,7 @@ use std::io::{Write, Read, Cursor, Result};
 use snappy_rust::{Compressor,Decompressor, compress, decompress, max_compressed_len};
 
 
-fn roundtrip(data: &[u8]) {
+fn roundtrip(data: &[u8]) -> bool {
 
 	// Write into Buffer
 	let mut comp = Cursor::new(Vec::<u8>::with_capacity(100));
@@ -29,14 +29,14 @@ fn roundtrip(data: &[u8]) {
 		});
 
 	// Check Result
-	assert!(decomp == data);
+	decomp == data
 }
 
 #[test]
 /// Snappy: Roundtrip Uncompressible Data
 fn should_do_uncompressible() {
-	roundtrip(b"123456789abcdefg");
-	roundtrip(b"The quick red fox jumped over the lazy dog");
+	assert!(roundtrip(b"123456789abcdefg"));
+	assert!(roundtrip(b"The quick red fox jumped over the lazy dog"));
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn should_do_compressible() {
 	
 	// TODO
 	// Byteorder Crashes with this:
-	roundtrip(b"1111111100000000");
+	assert!(roundtrip(b"1111111100000000"));
 }
 
 #[test]
@@ -62,15 +62,15 @@ fn should_do_files(){
 
 	// Testfiles are copied directly from:
 	// https://raw.githubusercontent.com/google/snappy/master/snappy_unittest.cc
-	let test_files: Vec<&[u8]> = vec![
-		include_bytes!("data/alice29.txt"),
-		include_bytes!("data/asyoulik.txt"),
-		include_bytes!("data/lcet10.txt"),
-		include_bytes!("data/plrabn12.txt")
+	let test_files: Vec<(&str, &[u8])> = vec![
+		("alice29.txt" ,include_bytes!("data/alice29.txt")),
+		("asyoulik.txt", include_bytes!("data/asyoulik.txt")),
+		("lcet10.txt", include_bytes!("data/lcet10.txt")),
+		("plrabn12.txt", include_bytes!("data/plrabn12.txt"))
 	];
 
-	for file in test_files {
-		roundtrip(file);
+	for (label, data) in test_files {
+		assert!(roundtrip(data), "Mismatch at File: {:?}", label);
 	}
 }
 
