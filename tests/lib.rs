@@ -52,15 +52,16 @@ fn should_do_empty() {
 #[test]
 /// Snappy: Test Files
 fn should_do_files(){
+	
 	// Testfiles are copied directly from:
 	// https://raw.githubusercontent.com/google/snappy/master/snappy_unittest.cc
-	let test_files = vec![
-		include_str!("../data/alice29.txt"),
-		include_str!("../data/asyoulike.txt"),
-		include_str!("../data/Icet10.txt"),
-		include_str!("../data/plarbn12.txt")
+	let test_files: Vec<&[u8]> = vec![
+		include_bytes!("data/alice29.txt"),
+		include_bytes!("data/asyoulik.txt"),
+		include_bytes!("data/lcet10.txt"),
+		include_bytes!("data/plrabn12.txt")
 	];
-	
+
 	for file in test_files {
 		roundtrip(file);
 	}
