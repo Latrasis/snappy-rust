@@ -11,19 +11,26 @@ fn roundtrip(data: &[u8]) {
 
 	// Write into Buffer
 	let mut comp = Cursor::new(Vec::<u8>::with_capacity(100));
-	let c = Compressor::new(&mut comp).write_all(data).unwrap();
+	let c = Compressor::new(&mut comp)
+		.write_all(data)
+		.unwrap_or_else(|err| {
+			panic!("Error at Compress: {:?}", err);
+		});
 
 	// Reset Position
 	comp.set_position(0);
 
 	// Read into Buffer
 	let mut decomp : Vec<u8> = vec![0; data.len()];
-	let d = Decompressor::new(&mut comp).read(&mut decomp).unwrap();
+	let d = Decompressor::new(&mut comp)
+		.read(&mut decomp)
+		.unwrap_or_else(|err| {
+			panic!("Error at Decompress: {:?}", err);
+		});
 
 	// Check Result
 	assert!(decomp == data);
 }
-
 
 #[test]
 /// Snappy: Roundtrip Uncompressible Data
@@ -52,7 +59,7 @@ fn should_do_empty() {
 #[test]
 /// Snappy: Test Files
 fn should_do_files(){
-	
+
 	// Testfiles are copied directly from:
 	// https://raw.githubusercontent.com/google/snappy/master/snappy_unittest.cc
 	let test_files: Vec<&[u8]> = vec![
