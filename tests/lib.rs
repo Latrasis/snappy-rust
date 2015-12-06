@@ -27,18 +27,46 @@ fn roundtrip(data: &[u8]) {
 
 #[test]
 /// Snappy: Roundtrip Uncompressible Data
-fn should_roundtrip_uncompressible() {
+fn should_do_uncompressible() {
 	roundtrip(b"123456789abcdefg");
+	roundtrip(b"The quick red fox jumped over the lazy dog");
 }
 
 #[test]
 /// Snappy: Roundtrip Compressible Data
-fn should_roundtrip_compressible() {
+fn should_do_compressible() {
 	
 	// TODO
 	// Byteorder Crashes with this:
 	roundtrip(b"1111111100000000");
 }
+
+#[test]
+/// Snappy: Test Empty
+fn should_do_empty() {
+	let a = [];
+	roundtrip(&a);
+}
+
+
+#[test]
+/// Snappy: Test Files
+fn should_do_files(){
+	// Testfiles are copied directly from:
+	// https://raw.githubusercontent.com/google/snappy/master/snappy_unittest.cc
+	let test_files = vec![
+		include_str!("../data/alice29.txt"),
+		include_str!("../data/asyoulike.txt"),
+		include_str!("../data/Icet10.txt"),
+		include_str!("../data/plarbn12.txt")
+	];
+	
+	for file in test_files {
+		roundtrip(file);
+	}
+}
+
+
 
 
 
