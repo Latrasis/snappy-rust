@@ -121,6 +121,7 @@ impl <W: Write + Seek> Seek for Compressor<W> {
 
 // (Future) Include a Legacy Compress??
 pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
+
     if dst.len() < max_compressed_len(src.len()) {
         return Err(Error::new(ErrorKind::InvalidInput, "snappy: destination buffer is too short"));
     }
@@ -194,17 +195,16 @@ pub fn compress(dst: &mut [u8], src: &[u8]) -> io::Result<usize> {
 
         // Otherwise, we have a match. First, emit any pending literal bytes.
         // Panics on d > dst.len();
-        if lit != s {
 
+        if lit != s {
             d += try!(emit_literal(dst.split_at_mut(d).1,
 
                 // Handle Split_at mid < src check 
                 {
-                    let _lit = src.split_at(lit).1;
-                    if _lit.len() > s {
-                        _lit.split_at(s).0
+                    if src.len() > s {
+                        src.split_at(s).0.split_at(lit).1
                     } else {
-                        _lit
+                        src.split_at(lit).1
                     }
                 }));
         }
